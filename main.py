@@ -39,7 +39,8 @@ Attribute:
 AVAILABLE_MODELS = ["gemini-3.5-flash","gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
 CURRENT_MODEL = AVAILABLE_MODELS[0] 
 SCHEDULE_FILE = "schedule.json"
-SCREENSHOT_TEMP_PATH = os.path.join("tmp", "screenshot_temp.png")   
+SCREENSHOT_TEMP_PATH = os.path.join("tmp", "screenshot_temp.png")
+os.makedirs(os.path.dirname(SCREENSHOT_TEMP_PATH), exist_ok=True)   # 確保 tmp 資料夾存在,不然存檔會 FileNotFoundError
 USER_PROFILE_FILE = "user_profile.json"   
 AVATAR_DIR = "avatar"
 AVATAR_PATH = os.path.join(AVATAR_DIR, "avatar.png")   
@@ -131,9 +132,8 @@ tool:
 
 #for test code correct or not
 @tool
-# 這個工具用於執行 Python 程式碼並回傳輸出結果
 def run_python(code: str) -> str:
-    
+    """執行一段 Python 程式碼並回傳輸出結果,可用來寫程式、驗證邏輯是否正確。高風險,執行前需使用者確認。"""
     try:
         result = subprocess.run(["python", "-c", code], capture_output=True, text=True, timeout=15)
         return result.stdout if result.returncode == 0 else f"執行錯誤:\n{result.stderr}"
@@ -144,8 +144,8 @@ def run_python(code: str) -> str:
 
 
 @tool
-# 這個工具用於透過 DuckDuckGo 搜尋並回傳摘要結果
 def web_search(query: str) -> str:
+    """搜尋網路上的即時資訊。"""
     results = []
     try:
         with DDGS() as ddgs:
@@ -157,8 +157,8 @@ def web_search(query: str) -> str:
 
 
 @tool
-# 這個工具用於讀取文字檔案內容，最多回傳 3000 字元
 def read_file(path: str) -> str:
+    """讀取指定路徑的文字檔案內容。"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -168,8 +168,8 @@ def read_file(path: str) -> str:
 
 
 @tool
-# 這個工具用於寫入文字檔案內容
 def write_file(path: str, content: str) -> str:
+    """建立或覆寫一個文字檔案。高風險,執行前需使用者確認。"""
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -179,8 +179,8 @@ def write_file(path: str, content: str) -> str:
 
 
 @tool
-# 這個工具用於列出指定資料夾內容
 def list_directory(path: str = ".") -> str:
+    """列出指定資料夾底下的檔案與子資料夾。"""
     try:
         items = os.listdir(path)
         return "\n".join(items) if items else "(空資料夾)"
@@ -189,8 +189,8 @@ def list_directory(path: str = ".") -> str:
 
 
 @tool
-# 這個工具用於新增行程並儲存到排程檔案
 def schedule_add(title: str, date: str, time: str, note: str = "") -> str:
+    """新增一筆行程,date 格式如 2026-07-15,time 格式如 14:00。高風險,執行前需使用者確認。"""
     try:
         items = []
         if os.path.exists(SCHEDULE_FILE):
@@ -206,8 +206,8 @@ def schedule_add(title: str, date: str, time: str, note: str = "") -> str:
 
 
 @tool
-# 這個工具用於列出所有儲存的行程
 def schedule_list() -> str:
+    """列出所有已安排的行程。"""
     try:
         if not os.path.exists(SCHEDULE_FILE):
             return "目前沒有任何行程。"
@@ -221,8 +221,10 @@ def schedule_list() -> str:
 
 
 @tool
-# 這個工具用於記住使用者資訊並儲存到個人設定檔
 def remember_user_fact(key: str, value: str) -> str:
+    """永久記住一項使用者的個人資訊,例如姓名、居住地、生日、職業、喜好等,
+    下次對話(甚至重開程式)依然會記得。key 用簡短的中文欄位名,例如「姓名」「地址」「職業」。
+    高風險,執行前需使用者確認。"""
     try:
         profile = {}
         if os.path.exists(USER_PROFILE_FILE):
@@ -237,8 +239,8 @@ def remember_user_fact(key: str, value: str) -> str:
 
 
 @tool
-# 這個工具用於從個人設定檔中刪除已記住的資訊
 def forget_user_fact(key: str) -> str:
+    """刪除一項先前記住的使用者個人資訊。高風險,執行前需使用者確認。"""
     try:
         if not os.path.exists(USER_PROFILE_FILE):
             return "目前沒有任何已記住的資訊。"
@@ -255,8 +257,10 @@ def forget_user_fact(key: str) -> str:
 
 
 @tool
-# 這個工具用於讀取網頁並截圖後分析畫面內容
 def read_webpage(url: str) -> str:
+    """開啟指定網址並截圖,再用視覺模型描述畫面上的文字與重點內容,
+    適合用在使用者說「幫我看這個網頁在寫什麼」「這個網址內容是什麼」的情境。
+    傳入完整網址,例如 https://example.com。"""
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
@@ -282,8 +286,10 @@ def read_webpage(url: str) -> str:
 
 
 @tool
-# 這個工具用於擷取螢幕截圖並回傳分析結果
 def take_screenshot() -> str:
+    """擷取使用者目前的螢幕畫面,並用視覺模型描述畫面上的內容,
+    適合用在使用者說「幫我看一下我現在螢幕在幹嘛」「截圖分析我目前畫面」的情境。
+    高風險,執行前需使用者確認(因為會擷取使用者當下的螢幕內容,可能包含隱私資訊)。"""
     try:
         image = ImageGrab.grab()
 
@@ -546,7 +552,7 @@ class ChatBubblePanel(QWidget):
 
         full_path = path.united(tail)
 
-        painter.fillPath(full_path, 255, 240, 245, 235)
+        painter.fillPath(full_path, QColor(255, 240, 245, 235))
         painter.setPen(QColor(0, 0, 0, 40))
         painter.drawPath(full_path)
 
