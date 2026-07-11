@@ -11,7 +11,7 @@ pip install -r requirements.txt
 
 **2. 設定 Google API Key**
 
-在專案根目錄建立 `.env` 檔案(不會上傳到 GitHub),內容:
+在專案根目錄建立 `.env` 檔案,內容:
 
 ```
 GOOGLE_API_KEY=你的Key
