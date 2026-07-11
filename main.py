@@ -131,6 +131,7 @@ tool:
 
 #for test code correct or not
 @tool
+# 這個工具用於執行 Python 程式碼並回傳輸出結果
 def run_python(code: str) -> str:
     
     try:
@@ -143,6 +144,7 @@ def run_python(code: str) -> str:
 
 
 @tool
+# 這個工具用於透過 DuckDuckGo 搜尋並回傳摘要結果
 def web_search(query: str) -> str:
     results = []
     try:
@@ -155,6 +157,7 @@ def web_search(query: str) -> str:
 
 
 @tool
+# 這個工具用於讀取文字檔案內容，最多回傳 3000 字元
 def read_file(path: str) -> str:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -165,6 +168,7 @@ def read_file(path: str) -> str:
 
 
 @tool
+# 這個工具用於寫入文字檔案內容
 def write_file(path: str, content: str) -> str:
     try:
         with open(path, "w", encoding="utf-8") as f:
@@ -175,6 +179,7 @@ def write_file(path: str, content: str) -> str:
 
 
 @tool
+# 這個工具用於列出指定資料夾內容
 def list_directory(path: str = ".") -> str:
     try:
         items = os.listdir(path)
@@ -184,6 +189,7 @@ def list_directory(path: str = ".") -> str:
 
 
 @tool
+# 這個工具用於新增行程並儲存到排程檔案
 def schedule_add(title: str, date: str, time: str, note: str = "") -> str:
     try:
         items = []
@@ -200,6 +206,7 @@ def schedule_add(title: str, date: str, time: str, note: str = "") -> str:
 
 
 @tool
+# 這個工具用於列出所有儲存的行程
 def schedule_list() -> str:
     try:
         if not os.path.exists(SCHEDULE_FILE):
@@ -214,6 +221,7 @@ def schedule_list() -> str:
 
 
 @tool
+# 這個工具用於記住使用者資訊並儲存到個人設定檔
 def remember_user_fact(key: str, value: str) -> str:
     try:
         profile = {}
@@ -229,6 +237,7 @@ def remember_user_fact(key: str, value: str) -> str:
 
 
 @tool
+# 這個工具用於從個人設定檔中刪除已記住的資訊
 def forget_user_fact(key: str) -> str:
     try:
         if not os.path.exists(USER_PROFILE_FILE):
@@ -246,6 +255,7 @@ def forget_user_fact(key: str) -> str:
 
 
 @tool
+# 這個工具用於讀取網頁並截圖後分析畫面內容
 def read_webpage(url: str) -> str:
     try:
         with sync_playwright() as p:
@@ -272,6 +282,7 @@ def read_webpage(url: str) -> str:
 
 
 @tool
+# 這個工具用於擷取螢幕截圖並回傳分析結果
 def take_screenshot() -> str:
     try:
         image = ImageGrab.grab()
