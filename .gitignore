@@ -1,8 +1,15 @@
 .env
 .vscode/
-avatar
+tmp/
+dist/
+build/
+avatar/
+__pycache__/
 checkpoint.sqlite
 persona_prompt.txt
 schedule.json
-tmp/
 user_profile.json
+cover.ico
+cover.png
+hina_agent.exe
+hina_agent.spec
