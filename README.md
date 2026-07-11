@@ -1,6 +1,4 @@
-# Hina Agent
 
-Sorasaki Hina, a character from Blue Archive, is my waifu — I'd like to have her take on the role of my AI agent persona, powered by Gemini.
 
 一個懸浮在桌面右下角的 AI 小助手,點擊頭像即可彈出聊天面板互動。主要使用 **PyQt5** 打造桌面 GUI,並透過 **LangChain / LangGraph** 串接 Gemini 打造具備工具呼叫能力的 Agent。
 
