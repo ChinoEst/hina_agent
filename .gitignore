@@ -1,0 +1,8 @@
+.env
+.vscode/
+avatar
+checkpoint.sqlite
+persona_prompt.txt
+schedule.json
+tmp/
+user_profile.json
