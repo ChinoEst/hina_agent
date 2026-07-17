@@ -5,10 +5,16 @@ import base64
 import subprocess
 import random
 import re
+import asyncio
 from PIL import Image, ImageGrab
 from ddgs import DDGS
 from playwright.sync_api import sync_playwright
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
+from urllib.parse import urlparse
+from typing import Optional
+
+from mcp_config import MCP_SERVERS, MCP_RISKY_KEYWORDS, PUPPETEER_ALLOWED_DOMAINS, check_mcp_env
 
 
 from dotenv import load_dotenv
@@ -157,38 +163,6 @@ def web_search(query: str) -> str:
 
 
 @tool
-def read_file(path: str) -> str:
-    """讀取指定路徑的文字檔案內容。"""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        return content[:3000]
-    except Exception as e:
-        return f"讀取失敗:{e}"
-
-
-@tool
-def write_file(path: str, content: str) -> str:
-    """建立或覆寫一個文字檔案。高風險,執行前需使用者確認。"""
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
-        return f"已寫入檔案:{path}"
-    except Exception as e:
-        return f"寫入失敗:{e}"
-
-
-@tool
-def list_directory(path: str = ".") -> str:
-    """列出指定資料夾底下的檔案與子資料夾。"""
-    try:
-        items = os.listdir(path)
-        return "\n".join(items) if items else "(空資料夾)"
-    except Exception as e:
-        return f"讀取資料夾失敗:{e}"
-
-
-@tool
 def schedule_add(title: str, date: str, time: str, note: str = "") -> str:
     """新增一筆行程,date 格式如 2026-07-15,time 格式如 14:00。高風險,執行前需使用者確認。"""
     try:
@@ -315,12 +289,110 @@ def take_screenshot() -> str:
         return f"截圖失敗:{e}"
 
 
-RISKY_TOOLS = {"run_python", "write_file", "schedule_add", "remember_user_fact", "forget_user_fact", "take_screenshot"}
+RISKY_TOOLS = {"run_python", "schedule_add", "remember_user_fact", "forget_user_fact", "take_screenshot"}
 ALL_TOOLS = [
-    run_python, web_search, read_file, write_file, list_directory,
+    run_python, web_search,
     schedule_add, schedule_list, remember_user_fact, forget_user_fact,
     read_webpage, take_screenshot,
 ]
+
+
+def is_risky_tool(tool_name: str) -> bool:
+    """
+    自製工具用固定白名單(RISKY_TOOLS)判斷;
+    MCP server 提供的工具名稱不受我們控制,無法預先列白名單,
+    所以額外用關鍵字比對(寫入/刪除/搬移等動作一律視為高風險)。
+    """
+    if tool_name in RISKY_TOOLS:
+        return True
+    lowered = tool_name.lower()
+    return any(keyword in lowered for keyword in MCP_RISKY_KEYWORDS)
+
+
+def _extract_urls(tool_args) -> list:
+    """從工具參數裡挖出看起來像網址的字串值(不管參數叫 url、uri 還是其他名字)。"""
+    urls = []
+    if isinstance(tool_args, dict):
+        values = tool_args.values()
+    elif isinstance(tool_args, (list, tuple)):
+        values = tool_args
+    else:
+        values = [tool_args]
+    for v in values:
+        if isinstance(v, str) and re.match(r"^https?://", v):
+            urls.append(v)
+    return urls
+
+
+def _domain_allowed(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return False
+    return any(host == d or host.endswith("." + d) for d in PUPPETEER_ALLOWED_DOMAINS)
+
+
+def puppeteer_domain_violation(tool_name: str, tool_args) -> Optional[str]:
+    """
+    只針對 puppeteer 系列工具檢查。如果參數裡有網址、且不在 PUPPETEER_ALLOWED_DOMAINS 白名單內,
+    回傳擋下來的原因文字;沒問題就回傳 None。
+    白名單是空的時候視為「尚未設定限制」,不擋(但 check_mcp_env 啟動時會印警告提醒設定)。
+    """
+    if "puppeteer" not in tool_name.lower():
+        return None
+    if not PUPPETEER_ALLOWED_DOMAINS:
+        return None
+    for url in _extract_urls(tool_args):
+        if not _domain_allowed(url):
+            return f"目標網址「{url}」的網域不在 PUPPETEER_ALLOWED_DOMAINS 白名單內,已自動擋下,不會執行。"
+    return None
+
+
+async def _load_mcp_tools_async() -> list:
+    """
+    逐台 server 個別連線、個別失敗互不影響——
+    例如 GitHub server 因為沒設 token 連不上時,filesystem server 仍然要正常載入。
+    """
+    all_tools = []
+    for server_name, server_config in MCP_SERVERS.items():
+        try:
+            client = MultiServerMCPClient({server_name: server_config})
+            tools = await client.get_tools()
+            all_tools.extend(tools)
+        except Exception as e:
+            print(f"MCP server「{server_name}」載入失敗,已略過:{e}")
+    return all_tools
+
+
+def load_mcp_tools_sync() -> list:
+    """
+    在 app 啟動時呼叫一次(同步包一層 asyncio.run),
+    不要放進 build_agent() 裡,不然每次切換模型都會重連一次 MCP server。
+    """
+    if not MCP_SERVERS:
+        return []
+    try:
+        return asyncio.run(_load_mcp_tools_async())
+    except Exception as e:
+        print(f"MCP 工具載入失敗(檢查 Node.js/npx 是否安裝、伺服器指令是否正確):{e}")
+        return []
+
+
+def merge_mcp_tools(mcp_tools: list) -> None:
+    """
+    把 MCP 工具併進 ALL_TOOLS,並處理跟既有自製工具撞名的狀況。
+    撞名時保留自製工具、捨棄 MCP 那個同名工具,並印出警告——
+    因為 LLM function calling 不允許兩個同名工具同時存在。
+    """
+    existing_names = {t.name for t in ALL_TOOLS}
+    added = []
+    for t in mcp_tools:
+        if t.name in existing_names:
+            print(f"MCP 工具「{t.name}」與既有工具撞名,已略過(保留自製版本)。")
+            continue
+        ALL_TOOLS.append(t)
+        added.append(t.name)
+    if added:
+        print(f"已載入 MCP 工具:{', '.join(added)}")
 
 
 def build_agent(model_name: str, memory: MemorySaver):
@@ -397,7 +469,12 @@ class AgentWorker(QThread):
                 last_msg = snapshot.values["messages"][-1]
                 tool_call = last_msg.tool_calls[0]
                 tool_name = tool_call["name"]
-                if tool_name in RISKY_TOOLS:
+                violation = puppeteer_domain_violation(tool_name, tool_call["args"])
+                if violation:
+                    # 直接擋下來,連確認視窗都不跳——網域白名單是寫死的規則,不是「風險提示」,
+                    # 不應該讓使用者用一次點擊就繞過去。
+                    self.error_signal.emit(violation)
+                elif is_risky_tool(tool_name):
                     self.need_confirm_signal.emit(tool_name, str(tool_call["args"]))
                 else:
                     auto_result = self.agent_app.invoke(None, config=self.config)
@@ -794,6 +871,10 @@ def main():
     if not os.environ.get("GOOGLE_API_KEY"):
         print("錯誤:找不到 GOOGLE_API_KEY,請確認 .env 檔案設定正確。")
         sys.exit(1)
+
+    check_mcp_env()
+    mcp_tools = load_mcp_tools_sync()
+    merge_mcp_tools(mcp_tools)
 
     app = QApplication(sys.argv)
     #close chat can*t close all program
